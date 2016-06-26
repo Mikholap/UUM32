@@ -5,12 +5,16 @@ using System.Reflection;
 using System.Windows.Forms;
 using System.Threading;
 using ASM.UI;
+using ASM.Utilit;
+using System.Collections.Specialized;
+using System.ComponentModel;
+using System.Collections.ObjectModel;
 
 namespace ASM.VM
 {
     public class Core
     {
-        public static readonly BindingSource Errors;
+        public static readonly ObservableCollection<ErrorMessageRow> Errors = new ObservableCollection<ErrorMessageRow>();
 
         public enum State
         {
@@ -26,15 +30,15 @@ namespace ASM.VM
         private ManualResetEvent waitEvent;
         private CombineRows code;
         private EventHandler stateChanged;
+        private int total;
         private State status;
-        
-        public Dictionary<string, int> Links = new Dictionary<string, int>();
-        public Dictionary<string, int> DataByte = new Dictionary<string, int>();
-        public List<Register> Registers;
-        public List<byte> Data = new List<byte>();
-        public Stack<int> Stack = new Stack<int>();
+        private int dataZoneOffest;
+        private byte[] data;
+
+        public readonly Dictionary<string, int> Links = new Dictionary<string, int>();
+        public readonly List<Register> Registers = new List<Register>();
+        public readonly Stack<int> Stack = new Stack<int>();
         public int ActiveIndex = 0;
-        public int TotalTick { get; private set; }
 
         public State Status
         {
@@ -58,6 +62,57 @@ namespace ASM.VM
             }
         }
 
+        public StringCollection RegNames32
+        {
+            get { return Properties.Settings.Default.Register32; }
+            set
+            {
+                if (value != null)
+                {
+                    Registers.RemoveAll(reg => reg is Register32);
+                    foreach (string name in value)
+                    {
+                        if (name != "")
+                            Registers.Add(new Register32(name.Replace("\n", "")));
+                    }
+                }
+            }
+        }
+
+        public StringCollection RegNames16
+        {
+            get { return Properties.Settings.Default.Register16; }
+            set
+            {
+                Registers.RemoveAll(reg => reg is Register16);
+                if (value != null)
+                {
+                    foreach (string name in value)
+                    {
+                        if (name != "")
+                            Registers.Add(new Register16(name.Replace("\n", ""), new Register32("__crutch_" + name)));
+                    }
+                }
+            }
+        }
+
+        public StringCollection RegNames8
+        {
+            get { return Properties.Settings.Default.Register8; }
+            set
+            {
+                if (value != null)
+                {
+                    Registers.RemoveAll(reg => reg is Register8);
+                    foreach (string name in value)
+                    {
+                        if (name != "")
+                            Registers.Add(new Register8(name.Replace("\n", ""), new Register32("__crutch_" + name)));
+                    }
+                }
+            }
+        }
+
         public class Operation
         {
             public CodeEditBox.RowReadonly row;
@@ -66,58 +121,15 @@ namespace ASM.VM
             public MethodInfo method;
         }
 
-        static Core()
-        {
-            Errors = new BindingSource();
-            Errors.Add(new ErrorMessageRow("", 0));
-            Errors.RemoveAt(0);
-        }
-
         public Core()
         {
             Operators.ActiveCore = this;
 
             stateChanged = (s, e) => { };
             waitEvent = new ManualResetEvent(true);
-            RecreateRegisters();
-            Properties.Settings.Default.SettingsSaving += SettingsSaving;
-        }
-
-        private void SettingsSaving(object sender, System.ComponentModel.CancelEventArgs e)
-        {
-            RecreateRegisters();
-        }
-
-        public void RecreateRegisters()
-        {
-            Registers = new List<Register>();
-
-            var stetting = Properties.Settings.Default;
-            if (stetting.Register32 != null)
-            {
-                foreach (string name in stetting.Register32)
-                {
-                    if (name != "")
-                        Registers.Add(new Register32(name.Replace("\n", "")));
-                }
-            }
-            if (stetting.Register16 != null)
-            {
-                foreach (string name in stetting.Register16)
-                {
-                    if (name != "")
-                        Registers.Add(new Register16(name.Replace("\n", ""), new Register32("__crutch_" + name)));
-                }
-            }
-            if (stetting.Register8 != null)
-            {
-                foreach (string name in stetting.Register8)
-                {
-                    if (name != "")
-                        Registers.Add(new Register8(name.Replace("\n", ""), new Register32("__crutch_" + name)));
-                }
-            }
-
+            new PropertyJoin(this, "RegNames32", Properties.Settings.Default, "Register32");
+            new PropertyJoin(this, "RegNames16", Properties.Settings.Default, "Register16");
+            new PropertyJoin(this, "RegNames8", Properties.Settings.Default, "Register8");
             Registers.Add(new RegisterFlag("flag"));
         }
 
@@ -133,12 +145,12 @@ namespace ASM.VM
 
         public void Invoke()
         {
-            if (status != State.Ready)
+            if (status != State.Ready && status != State.Finish)
                 return;
 
             Stack.Clear();
             ActiveIndex = 0;
-            TotalTick = 0;
+            total = 0;
             waitEvent.Set();
             Status = State.Launched;
 
@@ -148,60 +160,64 @@ namespace ASM.VM
                 Thread.Sleep(5);
                 if (--i == 0)
                 {
-                    MessageBox.Show("Консоль не отвечает.");
+                    MessageBox.Show("Консоль не отвечает");
                     return;
                 }
             }
 
-            while (ActiveIndex < source.Count && status == State.Launched)
+            try
             {
-                Operation op = source[ActiveIndex];
-
-                if (TotalTick > Properties.Settings.Default.TotalTickLimit)
+                while (ActiveIndex < source.Count && status == State.Launched)
                 {
-                    if (MessageBox.Show("Возможно, Ваша программа зациклилась.\nОстановть ее?", "Слишком много операций", MessageBoxButtons.YesNo) == DialogResult.Yes)
+                    Operation op = source[ActiveIndex];
+
+                    if (total > Properties.Settings.Default.TotalTickLimit)
                     {
-                        Status = State.Error;
-                        return;
-                    }
-                    TotalTick = -TotalTick;
-                }
-
-                if (op.row.IsFlag(CodeEditBox.RowFlag.Breakpoint))
-                    Pause();
-
-                op.row.SetFlag(CodeEditBox.RowFlag.Run);
-
-                waitEvent.WaitOne();
-
-                if (status == State.Launched)
-                {
-                    if (Program.Debug)
-                        op.method.Invoke(null, op.args);
-                    else
-                    {
-                        try
+                        if (MessageBox.Show("Возможно, Ваша программа зациклилась.\nОстановть ее?", "Слишком много операций", MessageBoxButtons.YesNo) == DialogResult.Yes)
                         {
-                            op.method.Invoke(null, op.args);
-                        }
-                        catch
-                        {
-                            MessageBox.Show(string.Format("Не обрабатываемая ошибка на строке {0}.\nОтладка не возможна.", op.row.Index + 1));
                             Status = State.Error;
+                            return;
                         }
+                        total = -total;
                     }
+
+                    if (op.row.IsFlag(CodeEditBox.RowFlag.Breakpoint))
+                        Pause();
+
+                    op.row.SetFlag(CodeEditBox.RowFlag.Run);
+                    waitEvent.WaitOne();
+
+                    try
+                    {
+                        op.method.Invoke(null, op.args);
+                    }
+                    catch (TargetInvocationException e)
+                    {
+                        if (e.InnerException is RuntimeException)
+                            throw e.InnerException;
+                        throw new RuntimeException("Необрабатываемая ошибка при выполнении инструкции " + op.method.Name, getCurrentRow());
+                    }
+                    finally
+                    {
+                        op.row.ResetFlag(CodeEditBox.RowFlag.Run);
+                    }
+
+                    if (ActiveIndex >= source.Count)
+                        throw new RuntimeException("Невозможно выполнить инструкцию, эта пямять не для инструкций", op.row.Index + 1);
+
+                    ActiveIndex++;
+                    total++;
                 }
-
-                op.row.ResetFlag(CodeEditBox.RowFlag.Run);
-
-                ActiveIndex++;
-                TotalTick++;
+                Status = State.Finish;
+            }
+            catch (RuntimeException e)
+            {
+                Console.WriteLine("Строка " + e.Row + ": " + e.Message + "\n");
+                Status = State.Error;
             }
 
-            Status = State.Finish;
-
+            Console.Write("Нажмите любую клавишу для продолжения");
             Console.MoveCaretToEnd();
-            Console.Write("\nPress any key to continue.");
             Console.ReadKey();
         }
 
@@ -210,10 +226,7 @@ namespace ASM.VM
             Stop();
             source.Clear();
             Links.Clear();
-            DataByte.Clear();
             Errors.Clear();
-            Data.Clear();
-
             code = rows;
 
             var lines = Preprocessor();
@@ -235,6 +248,8 @@ namespace ASM.VM
         public Dictionary<CodeEditBox.RowReadonly, string[]> Preprocessor()
         {
             var result = new Dictionary<CodeEditBox.RowReadonly, string[]>();
+            Dictionary<string, int> dataZone = new Dictionary<string, int>();
+            List<byte> dataList = new List<byte>();
 
             for (int i = 0; i < code.Length; i++)
             {
@@ -251,7 +266,7 @@ namespace ASM.VM
                     if (!Links.ContainsKey(text[0]))
                         Links.Add(text[0], result.Count);
                     else
-                        addError(new ErrorMessageRow(string.Format("Метка '{0} уже определена.", text[0]), i));
+                        addError(new ErrorMessageRow(string.Format("Метка '{0} уже определена", text[0]), i));
                 }
                 else
                     data = text[0];
@@ -260,24 +275,26 @@ namespace ASM.VM
 
                 if (text.Length != 0)
                 {
-                    if (text[0] == "byte")
+                    if (text[0] == "byte" || text[0] == "word")
                     {
-                        if (DataByte.ContainsKey(text[0]))
-                            addError(new ErrorMessageRow(string.Format("Метка '{0} уже определена.", text[0]), i));
-                        else
+                        dataZone.Add(Links.Last().Key, dataList.Count);
+                        string[] values = text[1].Split(',');
+                        foreach (string val in values)
                         {
-                            DataByte.Add(Links.Last().Key, Data.Count);
-                            string[] values = text[1].Split(',');
-                            foreach (string val in values)
+                            string v = val.Trim(' ');
+                            if (text[0] == "byte")
                             {
-                                string v = val.Trim(' ');
-                                if (v.StartsWith("'"))
-                                    Data.AddRange(v.Substring(1, v.Length - 2).Select(c => (byte)c));
+                                if (v[0] == '\'' || v[0] == '"')
+                                    dataList.AddRange(v.Substring(1, v.Length - 2).Select(c => (byte)c));
                                 else
-                                    Data.Add((byte)char.Parse(v));
+                                    dataList.Add((byte)int.Parse(v));
                             }
+                            else
+                                dataList.AddRange(BitConverter.GetBytes(int.Parse(v)));
                         }
                     }
+                    else if (text[0] == "equ")
+                        Links[Links.Keys.Last()] = int.Parse(text[1]);
                     else
                         result.Add(code[i], text);
                 }
@@ -285,6 +302,13 @@ namespace ASM.VM
 
             if (result.Count == 0)
                 addError(new ErrorMessageRow("Нужен код!", 0));
+            
+            dataZoneOffest = result.Count;
+            foreach(var k in dataZone)
+                Links[k.Key] = k.Value + dataZoneOffest;
+
+            dataList.AddRange(new byte[] { 0, 0, 0 });
+            data = dataList.ToArray();
 
             return result;
         }
@@ -313,7 +337,7 @@ namespace ASM.VM
                     return ParseOperation(op, args) ? op : null;
                 }
             }
-            addError(new ErrorMessageRow(string.Format("Операция '{0}' не определена.", op.operation), row.Index + 1));
+            addError(new ErrorMessageRow(string.Format("Операция '{0}' не определена", op.operation), row.Index + 1));
             return null;
         }
 
@@ -324,84 +348,62 @@ namespace ASM.VM
             ErrorMessageRow error = new ErrorMessageRow(null, operation.row.Index + 1);
 
             if (input.Length != paramInfo.Length)
-                error.Message = string.Format("Операция '{0}' имеет {1} оргумент(а).", operation.operation, paramInfo.Length);
+                error.Message = string.Format("Операция '{0}' имеет {1} оргумент(а)", operation.operation, paramInfo.Length);
 
             for (int i = 0; i < input.Length && error.Message == null; i++)
             {
                 Type needType = paramInfo[i].ParameterType;
                 int oldCount = output.Count;
+                string value = input[i];
 
+                value = value.TrimStart('#');
                 if (needType.BaseType == typeof(Register))
                 {
-                    Register reg = GetRegister(input[i].ToLower());
+                    Register reg = GetRegister(value.ToLower());
                     if (reg == null)
-                        error.Message = string.Format("Регистр '{0}' не сущесвует.", input[i]);
+                        error.Message = string.Format("Регистр '{0}' не сущесвует", value);
 
                     if (!needType.IsInstanceOfType(reg))
-                        error.Message = string.Format("Регистр '{0}' не может использоватся здесь.", input[i]);
+                        error.Message = string.Format("Регистр '{0}' не может использоватся здесь", value);
 
                     output.Add(reg);
                 }
                 else if (needType == typeof(int) || needType == typeof(short) || needType == typeof(char) || needType == typeof(byte))
                 {
-                    if (input[i][0] == '#')
-                    {
-                        int result;
-                        input[i] = input[i].Substring(1);
-
-                        if (!int.TryParse(input[i], out result))
-                            error.Message = string.Format("'{0}' не является числом.", input[i]);
-                        else
-                            output.Add(Convert.ChangeType(result, needType));
-                    }
-                }
-                else if (needType == typeof(DataIndex))
-                {
-                    if (!DataByte.ContainsKey(input[i]))
-                        error.Message = string.Format("Метка '{0}' ресурса не определена.", input[i]);
+                    double? result = value.MathToDouble();
+                    if (result != null)
+                        output.Add(Convert.ChangeType(result, needType));
                     else
-                        output.Add(new DataIndex(DataByte[input[i]]));
+                        error.Message = string.Format("'{0}' не является числом", value);
                 }
-                else if (needType == typeof(LineIndex))
+                else if (needType == typeof(Link))
                 {
-                    if (input[i].Contains('['))
+                    string[] temp = value.Split('[');
+                    Link link = new Link();
+                    double? row = value.MathToDouble();
+                    if (row != null)
+                        link.Line = (int)row;
+                    else
                     {
-                        input[i] = input[i].Substring(0, input[i].Length - 1);
-                        string[] temp = input[i].Split('[');
-                        int line;
-                        if (!int.TryParse(temp[0], out line))
-                        {
-                            if (temp[0][0] == '#')
-                            {
-                                temp[0] = temp[0].Substring(1);
-                                if (!Links.ContainsKey(temp[0]))
-                                    error.Message = string.Format("Метка '{0}' не определена.", temp[0]);
-                                else
-                                    line = Links[temp[0]];
-                            }
-                            else
-                                error.Message = string.Format("Ничего не понятно, наверное, это эльфийский.");
-                        }
-                        Register32 reg = GetRegister(temp[1].ToLower()) as Register32;
+                        if (!Links.ContainsKey(temp[0]))
+                            error.Message = string.Format("Метка '{0}' не определена", temp[0]);
+                        else
+                            link.Line = Links[temp[0]];
+                    }
+                    if (temp.Length == 2)
+                    {
+                        temp[1] = temp[1].Remove(temp[1].Length - 1).ToLower();
+                        Register32 reg = GetRegister(temp[1]) as Register32;
                         if (reg == null)
-                            error.Message = string.Format("Регистр '{0}' не сущесвует или не может использоватся здесь.", temp[1]);
+                            error.Message = string.Format("Регистр '{0}' не сущесвует или не может использоватся здесь", temp[1]);
                         else
-                            output.Add(new LineIndex(line, reg));
+                            link.reg32 = reg;
                     }
-                    else
-                    {
-                        if (input[i][0] == '#')
-                            input[i] = input[i].Substring(1);
-
-                        if (!Links.ContainsKey(input[i]))
-                            error.Message = string.Format("Метка '{0}' не определена.", input[i]);
-                        else
-                            output.Add(new LineIndex(Links[input[i]]));
-                    }
+                    output.Add(link);
                 }
 
                 if (oldCount == output.Count && error.Message != "")
-                    error.Message = string.Format("Недопустимый пораметр {0}.", input[i]);
+                    error.Message = string.Format("Недопустимый пораметр {0}", value);
             }
 
             operation.args = output.ToArray();
@@ -411,6 +413,31 @@ namespace ASM.VM
 
             addError(error);
             return false;
+        }
+
+        public byte GetByte(int adress)
+        {
+            return data[GetDataAdress(adress)];
+        }
+
+        public int GetWord(int adress)
+        {
+            return BitConverter.ToInt32(data, GetDataAdress(adress));
+        }
+
+        public int GetDataAdress(int adress)
+        {
+            adress -= dataZoneOffest;
+            if (adress < 0)
+                throw new RuntimeException("Память с инструкциями не доступна здесь", getCurrentRow());
+            if (adress >= data.Length)
+                throw new RuntimeException("Адресс за пределами выделенной памяти", getCurrentRow());
+            return adress;
+        }
+
+        private int getCurrentRow()
+        {
+            return source[ActiveIndex].row.Index + 1;
         }
 
         private void addError(ErrorMessageRow msg)

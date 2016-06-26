@@ -6,6 +6,7 @@ using WeifenLuo.WinFormsUI.Docking;
 using System;
 using System.Drawing;
 using ASM.VM;
+using ASM.Utilit;
 
 namespace ASM
 {
@@ -42,7 +43,7 @@ namespace ASM
                     name = "reg";
                     color = Color.BlueViolet;
                 }
-                else if (paramTypes[i].ParameterType == typeof(LineIndex))
+                else if (paramTypes[i].ParameterType == typeof(Link))
                 {
                     name = "metka";
                     color = Color.Green;

@@ -9,7 +9,7 @@
     <OutputType>WinExe</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>ASM</RootNamespace>
-    <AssemblyName>MAIDE</AssemblyName>
+    <AssemblyName>UUM32IDE</AssemblyName>
     <SccProjectName>
     </SccProjectName>
     <SccLocalPath>
@@ -86,7 +86,27 @@
       <DependentUpon>AboutForm.cs</DependentUpon>
     </Compile>
     <Compile Include="CombineRows.cs" />
-    <Compile Include="PropertyJoin.cs" />
+    <Compile Include="ErrorMessageRow.cs" />
+    <Compile Include="Modules\RegisterControl.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="Modules\RegisterControl.Designer.cs">
+      <DependentUpon>RegisterControl.cs</DependentUpon>
+    </Compile>
+    <Compile Include="UI\OverlayEditBox.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="UI\OverlayEditBox.Designer.cs">
+      <DependentUpon>OverlayEditBox.cs</DependentUpon>
+    </Compile>
+    <Compile Include="Utilit\Calculator\Calculator.cs" />
+    <Compile Include="Utilit\Calculator\Element.cs" />
+    <Compile Include="Utilit\Calculator\Operator.cs" />
+    <Compile Include="Utilit\InputHook\Events.cs" />
+    <Compile Include="Utilit\InputHook\InputHook.cs" />
+    <Compile Include="Utilit\InputHook\Structs.cs" />
+    <Compile Include="Utilit\InputHook\WinAPI.cs" />
+    <Compile Include="Utilit\PropertyJoin.cs" />
     <Compile Include="Settings.cs" />
     <Compile Include="UI\CodeBlock.cs">
       <SubType>UserControl</SubType>
@@ -160,14 +180,14 @@
       <DependentUpon>ExceptionForm.cs</DependentUpon>
     </Compile>
     <Compile Include="UI\MenuStripRenderer.cs" />
-    <Compile Include="SubClass.cs" />
+    <Compile Include="Utilit\Exep.cs" />
     <Compile Include="Modules\ErrorWindow.cs">
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="Modules\ErrorWindow.Designer.cs">
       <DependentUpon>ErrorWindow.cs</DependentUpon>
     </Compile>
-    <Compile Include="ModuleAtribute.cs" />
+    <Compile Include="Utilit\ModuleAtribute.cs" />
     <Compile Include="MainForm.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -180,6 +200,7 @@
     <Compile Include="Modules\NavigationWindow.Designer.cs">
       <DependentUpon>NavigationWindow.cs</DependentUpon>
     </Compile>
+    <Compile Include="VM\Link.cs" />
     <Compile Include="VM\Operators.cs" />
     <Compile Include="Modules\OperatorsWindow.cs">
       <SubType>Form</SubType>
@@ -196,8 +217,12 @@
     <Compile Include="Modules\RegistersWindow.Designer.cs">
       <DependentUpon>RegistersWindow.cs</DependentUpon>
     </Compile>
+    <Compile Include="VM\RuntimeException.cs" />
     <EmbeddedResource Include="AboutForm.resx">
       <DependentUpon>AboutForm.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Modules\RegisterControl.resx">
+      <DependentUpon>RegisterControl.cs</DependentUpon>
     </EmbeddedResource>
     <EmbeddedResource Include="UI\CodeBlock.resx">
       <DependentUpon>CodeBlock.cs</DependentUpon>
@@ -251,6 +276,9 @@
     </EmbeddedResource>
     <EmbeddedResource Include="UI\IconListControl.resx">
       <DependentUpon>IconListControl.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="UI\OverlayEditBox.resx">
+      <DependentUpon>OverlayEditBox.cs</DependentUpon>
     </EmbeddedResource>
     <None Include="app.config" />
     <None Include="Properties\Settings.settings">

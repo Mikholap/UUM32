@@ -7,6 +7,7 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Windows.Forms;
+using ASM.Utilit;
 
 namespace ASM.UI
 {
@@ -275,12 +276,7 @@ namespace ASM.UI
             SetStyle(ControlStyles.OptimizedDoubleBuffer, true);
             SetStyle(ControlStyles.AllPaintingInWmPaint, true);
 
-            foreach (var inf in typeof(CodeEditBox).GetProperties(BindingFlags.Public | BindingFlags.Instance))
-            {
-                var atrs = inf.GetCustomAttributes(typeof(DefaultValueAttribute), true);
-                if (atrs.Count() != 0)
-                    inf.SetValue(this, ((DefaultValueAttribute)atrs.First()).Value, BindingFlags.SetProperty, null, null, null);
-            }
+            this.LoadDefaultProperties();
 
             contextMenu.Renderer = new MenuStripRenderer();
             foreach (ToolStripItem item in contextMenu.Items)

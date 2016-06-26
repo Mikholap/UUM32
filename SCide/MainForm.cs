@@ -9,6 +9,7 @@ using System.Drawing;
 using System.Text;
 using ASM.VM;
 using ASM.UI;
+using ASM.Utilit;
 
 namespace ASM
 {
@@ -69,7 +70,7 @@ namespace ASM
             else
                 NewDocument();
 
-            status.Text = "Готово.";
+            status.Text = "Готово";
         }
 
         private void OpenFile()
@@ -178,7 +179,6 @@ namespace ASM
         {
             core.Destroy();
             runThread.Abort();
-            RegistersWindow.Binding.DataSource = null;
         }
 
         private void Core_StateChanged(object sender, EventArgs e)
@@ -197,7 +197,6 @@ namespace ASM
         private void pauseToolStripMenuItem_Click(object sender, EventArgs e)
         {
             core.Pause();
-            RegistersWindow.Instance.Refresh();
         }
 
         private void resumeToolStripMenuItem_Click(object sender, EventArgs e)
@@ -214,11 +213,11 @@ namespace ASM
         {
             if (!core.Build(ActiveDocument.CombineCode()))
             {
-                status.Text = "В ходе сборки возникли ошибки.";
+                status.Text = "В ходе сборки возникли ошибки";
                 ModuleAtribute.Show(typeof(ErrorWindow));
                 return false;
             }
-            status.Text = "Постоение успешно завершено.";
+            status.Text = "Построение успешно завершено";
             return true;
         }
 
@@ -227,9 +226,7 @@ namespace ASM
             //ActiveDocument.Code.ReadOnly = true;
             if (!build())
                 return;
-
-            RegistersWindow.Binding.DataSource = core.Registers;
-
+            
             BeginInvoke((Action)(() =>
             {
                 Console.Create();
@@ -268,8 +265,11 @@ namespace ASM
 
         private void BuildMenuRestart_Click(object sender, EventArgs e)
         {
-            stopToolStripMenuItem_Click(sender, e);
-            runToolStripMenuItem_Click(sender, e);
+            Console.Clear();
+            if (runThread != null)
+                runThread.Abort();
+            runThread = new Thread(core.Invoke);
+            runThread.Start();
         }
     }
 }
